@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Mines Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            touch-action: manipulation;
+        }
+        .tile {
+            perspective: 1000px;
+            transition: transform 0.2s ease-in-out;
+            position: relative;
+        }
+        .tile-inner {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            text-align: center;
+            transition: transform 0.6s;
+            transform-style: preserve-3d;
+        }
+        .tile.flipped .tile-inner {
+            transform: rotateY(180deg);
+        }
+        .tile.autobet-selection-mode:not(.selected-tile):hover {
+             background-color: #4b5563; /* gray-600 */
+        }
+        .tile-front, .tile-back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            -webkit-backface-visibility: hidden;
+            backface-visibility: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.5rem;
+        }
+        .tile-front {
+            background-color: #374151; /* gray-700 */
+        }
+        .tile-back {
+            transform: rotateY(180deg);
+        }
+        .gem-svg, .mine-svg {
+             width: 60%;
+             height: 60%;
+        }
+        .selected-tile .tile-front {
+            border: 2px solid #facc15; /* yellow-400 */
+            box-shadow: 0 0 10px #facc15;
+        }
+        .mode-switch-btn.active {
+            background-color: #4f46e5; /* indigo-600 */
+            color: white;
+        }
+        /* Auto Strategy Buttons */
+        .strategy-btn.active {
+            background-color: #4f46e5;
+            border-color: #4f46e5;
+        }
+        .strategy-input-group.active .strategy-label {
+             background-color: #4f46e5;
+             border-color: #4f46e5;
+        }
+
+        /* Toggle Switch Styles */
+        .toggle-checkbox:checked {
+            transform: translateX(100%);
+            border-color: #48bb78;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #48bb78;
+        }
+        .toggle-checkbox {
+            transition: all 0.2s ease-in-out;
+            left: 0;
+        }
+        .toggle-label {
+            transition: all 0.2s ease-in-out;
+        }
+        #scriptEditor {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.8rem;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white p-4 lg:p-8 flex items-center justify-center min-h-screen">
+
+    <div class="w-full max-w-6xl mx-auto">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+            <!-- Left Panel: Controls -->
+            <div class="lg-col-span-1 bg-gray-800 p-6 rounded-lg shadow-lg flex flex-col">
+                <h1 class="text-3xl font-bold mb-4 text-center text-indigo-400">Mines</h1>
+
+                <!-- Mode Switch -->
+                <div class="flex bg-gray-700 rounded-lg p-1 mb-4">
+                    <button id="manualModeBtn" class="mode-switch-btn w-1/2 p-2 rounded-md text-sm font-semibold transition-colors active">Manual</button>
+                    <button id="autoModeBtn" class="mode-switch-btn w-1/2 p-2 rounded-md text-sm font-semibold transition-colors">Auto</button>
+                    <button id="codeModeBtn" class="mode-switch-btn w-1/2 p-2 rounded-md text-sm font-semibold transition-colors">Code</button>
+                </div>
+
+                <div id="manualControls">
+                    <div class="space-y-4">
+                        <div>
+                            <label for="betAmount" class="block text-sm font-medium text-gray-400">Bet Amount</label>
+                            <input type="number" id="betAmount" value="0.0001" step="0.0001" class="w-full bg-gray-700 text-white border-gray-600 rounded-md mt-1 p-2">
+                        </div>
+                        <div>
+                            <label for="mineCount" class="block text-sm font-medium text-gray-400">Mines (1-24)</label>
+                            <div class="flex items-center space-x-2 mt-1">
+                                 <input type="range" id="mineCountSlider" min="1" max="24" value="5" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                                 <input type="number" id="mineCount" min="1" max="24" value="5" class="w-20 bg-gray-700 text-white border-gray-600 rounded-md p-2 text-center">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-6">
+                        <button id="betButton" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-md text-lg transition-all">Bet</button>
+                    </div>
+                     <div class="mt-4">
+                         <button id="cashoutButton" class="w-full bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-bold py-3 px-4 rounded-md text-lg transition-all" disabled>Cashout</button>
+                     </div>
+                </div>
+
+                <div id="autoControls" class="hidden">
+                    <div class="space-y-4">
+                         <div>
+                            <label for="autoBetAmount" class="block text-sm font-medium text-gray-400">Base Bet Amount</label>
+                            <input type="number" id="autoBetAmount" value="0.0001" step="0.0001" class="w-full bg-gray-700 text-white border-gray-600 rounded-md mt-1 p-2">
+                        </div>
+                         <div>
+                            <label for="autoMineCount" class="block text-sm font-medium text-gray-400">Mines (1-24)</label>
+                            <input type="number" id="autoMineCount" min="1" max="24" value="5" class="w-full bg-gray-700 text-white border-gray-600 rounded-md p-2 mt-1">
+                        </div>
+                        <div>
+                            <label for="numberOfBets" class="block text-sm font-medium text-gray-400">Number of Bets (0 for ∞)</label>
+                            <input type="number" id="numberOfBets" value="1000" class="w-full bg-gray-700 text-white border-gray-600 rounded-md p-2 mt-1">
+                        </div>
+                        <div class="flex items-center justify-between mt-2">
+                            <label for="turboMode" class="text-sm font-medium text-gray-400">Turbo Mode</label>
+                            <div class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
+                                <input type="checkbox" name="turboMode" id="turboMode" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer"/>
+                                <label for="turboMode" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-600 cursor-pointer"></label>
+                            </div>
+                        </div>
+                        <div class="p-3 bg-gray-900/50 rounded-lg">
+                            <h3 class="text-sm font-semibold mb-2">On Win</h3>
+                            <div class="flex items-center space-x-2">
+                                <button id="autoWinReset" class="strategy-btn w-1/2 p-2 bg-gray-600 rounded-md text-xs active">Reset</button>
+                                <div id="autoWinIncreaseGroup" class="strategy-input-group w-1/2 flex">
+                                    <span class="strategy-label inline-flex items-center px-2 bg-gray-600 text-gray-300 text-xs rounded-l-md border border-gray-600">Increase</span>
+                                    <input type="number" id="autoWinIncrease" value="0" class="w-full bg-gray-700 p-2 text-center text-xs rounded-r-md" placeholder="%">
+                                </div>
+                            </div>
+                        </div>
+                         <div class="p-3 bg-gray-900/50 rounded-lg">
+                            <h3 class="text-sm font-semibold mb-2">On Loss</h3>
+                            <div class="flex items-center space-x-2">
+                                <button id="autoLossReset" class="strategy-btn w-1/2 p-2 bg-gray-600 rounded-md text-xs">Reset</button>
+                                <div id="autoLossIncreaseGroup" class="strategy-input-group w-1/2 flex active">
+                                    <span class="strategy-label inline-flex items-center px-2 bg-gray-600 text-gray-300 text-xs rounded-l-md border border-gray-600">Increase</span>
+                                    <input type="number" id="autoLossIncrease" value="100" class="w-full bg-gray-700 p-2 text-center text-xs rounded-r-md" placeholder="%">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-6">
+                        <button id="startAutobetButton" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-md text-lg transition-all">Start Autobet</button>
+                    </div>
+                </div>
+
+                <div id="codeControls" class="hidden h-full flex flex-col">
+                    <p class="text-xs text-gray-400 mb-2">Define your strategy using JavaScript. The script will be re-evaluated before each bet.</p>
+                    <textarea id="scriptEditor" class="w-full h-64 bg-gray-900 text-white border-gray-600 rounded-md p-2 text-sm flex-grow"></textarea>
+                    <div class="mt-4">
+                        <button id="startScriptButton" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-md text-lg transition-all">Start Script</button>
+                    </div>
+                </div>
+
+
+                <div id="messageBox" class="mt-4 text-center font-semibold h-10 flex items-center justify-center"></div>
+
+                 <div class="mt-auto pt-6 border-t border-gray-700">
+                    <h2 class="text-lg font-semibold text-center mb-2">Provably Fair</h2>
+                    <div class="space-y-2 text-xs">
+                        <div>
+                            <label for="serverSeed" class="block font-medium text-gray-400">Server Seed</label>
+                            <input type="text" id="serverSeed" class="w-full bg-gray-700 text-white rounded p-1 mt-1 font-mono text-xs">
+                        </div>
+                        <div>
+                            <label for="clientSeed" class="block font-medium text-gray-400">Client Seed</label>
+                            <input type="text" id="clientSeed" class="w-full bg-gray-700 text-white rounded p-1 mt-1 font-mono text-xs">
+                        </div>
+                        <div>
+                            <label for="nonce" class="block font-medium text-gray-400">Nonce</label>
+                            <input type="number" id="nonce" class="w-full bg-gray-700 text-white rounded p-1 mt-1 font-mono">
+                        </div>
+                         <button id="newSeedButton" class="w-full text-sm mt-2 bg-gray-600 hover:bg-gray-500 py-1 rounded">New Seeds</button>
+                         <button id="debugButton" class="w-full text-sm mt-2 bg-blue-600 hover:bg-blue-500 py-1 rounded">Debug Last Game</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel: Game Area -->
+            <div class="lg:col-span-2 space-y-4">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                    <div class="bg-gray-800 p-4 rounded-lg">
+                        <div class="text-sm text-gray-400">Balance</div>
+                        <input type="number" id="balance" value="10.0000" step="0.0001" class="w-full text-center bg-transparent text-xl font-bold text-green-400 border-none p-0 focus:ring-0">
+                    </div>
+                    <div class="bg-gray-800 p-4 rounded-lg">
+                        <div class="text-sm text-gray-400">Profit</div>
+                        <div id="profitDisplay" class="text-xl font-bold text-gray-400">0.0000</div>
+                    </div>
+                    <div class="bg-gray-800 p-4 rounded-lg">
+                        <div class="text-sm text-gray-400">Bets</div>
+                        <div id="betsDisplay" class="text-xl font-bold">0</div>
+                    </div>
+                     <div class="bg-gray-800 p-4 rounded-lg">
+                        <div class="text-sm text-gray-400">Wagered</div>
+                        <div id="wageredDisplay" class="text-xl font-bold">0.0000</div>
+                    </div>
+                </div>
+
+                <div class="bg-gray-800 p-4 rounded-lg shadow-inner">
+                    <div id="gameGrid" class="grid grid-cols-5 grid-rows-5 gap-2 md:gap-3 aspect-square"></div>
+                </div>
+                
+                <div id="debugConsole" class="bg-gray-800 p-4 rounded-lg hidden">
+                    <h3 class="text-sm font-semibold mb-2">Debug Output</h3>
+                    <pre id="debugOutput" class="text-xs font-mono overflow-auto max-h-64 bg-gray-900 p-2 rounded"></pre>
+                </div>
+                <div id="scriptConsole" class="bg-gray-800 p-4 rounded-lg hidden">
+                    <h3 class="text-sm font-semibold mb-2">Script Log</h3>
+                    <pre id="scriptOutput" class="text-xs font-mono overflow-auto max-h-48 bg-gray-900 p-2 rounded"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <svg width="0" height="0" class="absolute">
+      <defs>
+        <g id="gem-icon"><path fill="#4ade80" d="M12 .5l3.5 6.5-3.5 12-3.5-12L12 .5z"/><path fill="#22c55e" d="M12 .5L8.5 7l3.5 12V.5z"/><path fill="#86efac" d="M12 19.5l3.5-12h-7l3.5 12z"/><path fill="#4ade80" d="M12 19.5V7l-3.5.01L12 19.5z"/><path fill="#16a34a" d="M8.5 7l-5 1 8.5 11.5zM15.5 7l5 1-8.5 11.5z"/><path fill="#22c55e" d="M8.5 7l-5 1 5-1.5zM15.5 7l5 1-5-1.5z"/></g>
+        <g id="mine-icon"><path fill="#ef4444" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/><circle fill="#f87171" cx="12" cy="12" r="8"/><path fill="#dc2626" d="M12 4c-4.41 0-8 3.59-8 8s3.59 8 8 8v-16z"/><path fill="rgba(255,255,255,0.3)" d="M12 5c-3.86 0-7 3.14-7 7s3.14 7 7 7 7-3.14 7-7c0-1.29-.35-2.5-1-3.54C16.58 6.43 14.37 5 12 5z"/></g>
+      </defs>
+    </svg>
+
+
+    <script>
+    // --- DOM Elements ---
+    const balanceInput = document.getElementById('balance');
+    const messageBox = document.getElementById('messageBox');
+    const gameGrid = document.getElementById('gameGrid');
+    const clientSeedInput = document.getElementById('clientSeed');
+    const serverSeedInput = document.getElementById('serverSeed');
+    const nonceInput = document.getElementById('nonce');
+    const newSeedButton = document.getElementById('newSeedButton');
+    const debugButton = document.getElementById('debugButton');
+    const debugConsole = document.getElementById('debugConsole');
+    const debugOutput = document.getElementById('debugOutput');
+    const profitDisplay = document.getElementById('profitDisplay');
+    const betsDisplay = document.getElementById('betsDisplay');
+    const wageredDisplay = document.getElementById('wageredDisplay');
+    
+    // Mode Buttons & Panels
+    const manualModeBtn = document.getElementById('manualModeBtn');
+    const autoModeBtn = document.getElementById('autoModeBtn');
+    const codeModeBtn = document.getElementById('codeModeBtn');
+    const manualControls = document.getElementById('manualControls');
+    const autoControls = document.getElementById('autoControls');
+    const codeControls = document.getElementById('codeControls');
+
+    // Manual Controls
+    const betAmountInput = document.getElementById('betAmount');
+    const mineCountInput = document.getElementById('mineCount');
+    const mineCountSlider = document.getElementById('mineCountSlider');
+    const betButton = document.getElementById('betButton');
+    const cashoutButton = document.getElementById('cashoutButton');
+
+    // Auto Controls
+    const startAutobetButton = document.getElementById('startAutobetButton');
+    const autoBetAmountInput = document.getElementById('autoBetAmount');
+    const autoMineCountInput = document.getElementById('autoMineCount');
+    const numberOfBetsInput = document.getElementById('numberOfBets');
+    const turboModeToggle = document.getElementById('turboMode');
+    const autoWinResetBtn = document.getElementById('autoWinReset');
+    const autoWinIncreaseInput = document.getElementById('autoWinIncrease');
+    const autoWinIncreaseGroup = document.getElementById('autoWinIncreaseGroup');
+    const autoLossResetBtn = document.getElementById('autoLossReset');
+    const autoLossIncreaseInput = document.getElementById('autoLossIncrease');
+    const autoLossIncreaseGroup = document.getElementById('autoLossIncreaseGroup');
+
+    // Code Controls
+    const scriptEditor = document.getElementById('scriptEditor');
+    const startScriptButton = document.getElementById('startScriptButton');
+    const scriptConsole = document.getElementById('scriptConsole');
+    const scriptOutput = document.getElementById('scriptOutput');
+    
+    // --- Game State & Settings ---
+    const GRID_SIZE = 25;
+    const HOUSE_EDGE = 0.01;
+    let mode = 'manual';
+    let manualGameState = {};
+    let sessionState = { startBalance: 0, bets: 0, wagered: 0 };
+    let autoBetState = {
+        running: false,
+        stopRequested: false,
+        selectedTiles: new Set(),
+        currentBetAmount: 0,
+        betsMade: 0,
+        startBalance: 0,
+        totalWagered: 0,
+    };
+    let scriptState = { running: false };
+
+    // --- Payout Calculation ---
+    function calculatePayoutMultiplier(numberOfMines, tilesUncovered) {
+        if (tilesUncovered === 0) return 1.0;
+        let cumulativeProbability = 1.0;
+        for (let k = 0; k < tilesUncovered; k++) {
+            const numerator = GRID_SIZE - numberOfMines - k;
+            const denominator = GRID_SIZE - k;
+            cumulativeProbability *= numerator / denominator;
+        }
+        return (1 - HOUSE_EDGE) / cumulativeProbability;
+    }
+
+    // --- Provably Fair Logic ---
+    async function* byteGenerator(serverSeed, clientSeed, nonce) {
+        let currentRound = 0;
+        const keyBytes = new TextEncoder().encode(serverSeed);
+        const hmacKey = await window.crypto.subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+        while (true) {
+            const message = `${clientSeed}:${nonce}:${currentRound}`;
+            const signature = await window.crypto.subtle.sign('HMAC', hmacKey, new TextEncoder().encode(message));
+            const buffer = new Uint8Array(signature);
+            for (let i = 0; i < buffer.length; i++) yield buffer[i];
+            currentRound++;
+        }
+    }
+
+    async function getRandomFloat(generator) {
+        const bytes = [];
+        for (let i = 0; i < 4; i++) bytes.push((await generator.next()).value);
+        return bytes.reduce((acc, v, i) => acc + v / Math.pow(256, i + 1), 0);
+    }
+
+    async function generateMinePositions(serverSeed, clientSeed, nonce, numberOfMines) {
+        const positions = Array.from({ length: 25 }, (_, i) => i);
+        const minePositions = [];
+        const generator = byteGenerator(serverSeed, clientSeed, nonce);
+        for (let i = 0; i < numberOfMines; i++) {
+            const randomFloat = await getRandomFloat(generator);
+            const index = Math.floor(randomFloat * positions.length);
+            minePositions.push(positions.splice(index, 1)[0]);
+        }
+        return minePositions;
+    }
+
+    // --- Debug ---
+    async function debugMineGeneration() {
+        const serverSeed = serverSeedInput.value.trim();
+        const clientSeed = clientSeedInput.value.trim();
+        const nonce = parseInt(nonceInput.value);
+        const numberOfMines = parseInt(mineCountInput.value);
+        const debugNonce = manualGameState.inProgress ? nonce - 1 : (autoBetState.running || scriptState.running) ? nonce -1 : nonce;
+        
+        let output = `DEBUGGING LAST GAME\n`;
+        output += `Server Seed: ${serverSeed}\n`;
+        output += `Client Seed: ${clientSeed}\n`;
+        output += `Nonce: ${debugNonce}\n`;
+        output += `Mines: ${numberOfMines}\n\n`;
+        
+        const keyBytes = new TextEncoder().encode(serverSeed);
+        output += `Key bytes (UTF8 of hex string, first 8): [${Array.from(keyBytes.slice(0, 8)).join(', ')}]\n\n`;
+        
+        const hmacKey = await window.crypto.subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+        
+        let allBytes = [];
+        let round = 0;
+        while(allBytes.length < numberOfMines * 4) {
+            const message = `${clientSeed}:${debugNonce}:${round}`;
+            const signature = await window.crypto.subtle.sign('HMAC', hmacKey, new TextEncoder().encode(message));
+            const buffer = new Uint8Array(signature);
+            output += `Round ${round} HMAC (hex): ${Array.from(buffer).map(b=>b.toString(16).padStart(2,'0')).join('')}\n`;
+            allBytes.push(...buffer);
+            round++;
+        }
+        output += '\n';
+
+        const positions = Array.from({ length: 25 }, (_, i) => i);
+        const minePositions = [];
+        
+        for (let i = 0; i < numberOfMines; i++) {
+            const bytes = allBytes.slice(i*4, i*4 + 4);
+            const randomFloat = bytes.reduce((acc, v, idx) => acc + v / Math.pow(256, idx + 1), 0);
+            const index = Math.floor(randomFloat * positions.length);
+            const selectedValue = positions[index];
+            
+            output += `Pick ${i + 1} (Bytes: [${bytes.join(', ')}]) -> Float: ${randomFloat.toFixed(8)} -> Index: ${index} -> Value: ${selectedValue}\n`;
+            
+            minePositions.push(positions.splice(index, 1)[0]);
+        }
+        
+        output += `\nFinal mine positions (drawn order): [${minePositions.join(', ')}]\n`;
+        
+        debugOutput.textContent = output;
+        debugConsole.classList.remove('hidden');
+    }
+
+    // --- UI & Mode Switching ---
+    function switchMode(newMode) {
+        if (autoBetState.running || scriptState.running) return;
+        mode = newMode;
+        
+        [manualModeBtn, autoModeBtn, codeModeBtn].forEach(btn => btn.classList.remove('active'));
+        [manualControls, autoControls, codeControls].forEach(c => c.classList.add('hidden'));
+
+        if (mode === 'manual') {
+            manualModeBtn.classList.add('active');
+            manualControls.classList.remove('hidden');
+            updateMessage("Place your bet.", "text-gray-400");
+        } else if (mode === 'auto') {
+            autoModeBtn.classList.add('active');
+            autoControls.classList.remove('hidden');
+            updateMessage("Select tiles for autobet.", "text-gray-400");
+        } else { // code
+            codeModeBtn.classList.add('active');
+            codeControls.classList.remove('hidden');
+            updateMessage("Write your script.", "text-gray-400");
+        }
+        resetGameUI();
+    }
+    
+    function createGrid() {
+        gameGrid.innerHTML = '';
+        for (let i = 0; i < 25; i++) {
+            const tile = document.createElement('div');
+            tile.className = 'tile rounded-lg cursor-pointer';
+            tile.dataset.index = i;
+            tile.innerHTML = `<div class="tile-inner"><div class="tile-front"></div><div class="tile-back bg-gray-600"></div></div>`;
+            tile.addEventListener('click', () => onTileClick(i));
+            gameGrid.appendChild(tile);
+        }
+        if (mode === 'auto') {
+             gameGrid.querySelectorAll('.tile').forEach(t => t.classList.add('autobet-selection-mode'));
+        }
+    }
+
+    // --- Manual Game Logic ---
+    async function startManualGame() {
+        const currentNonce = parseInt(nonceInput.value);
+        nonceInput.value = currentNonce + 1;
+
+        createGrid();
+        const betAmount = parseFloat(betAmountInput.value);
+        const balance = parseFloat(balanceInput.value);
+        const mineCount = parseInt(mineCountInput.value);
+
+        if (isNaN(betAmount) || betAmount <= 0) return updateMessage("Invalid bet amount.", "text-red-400");
+        if (betAmount > balance) return updateMessage("Insufficient balance.", "text-red-400");
+
+        balanceInput.value = (balance - betAmount).toFixed(4);
+        sessionState.bets++;
+        sessionState.wagered += betAmount;
+        updateStatsDisplay();
+        
+        manualGameState = {
+            inProgress: true,
+            betAmount: betAmount,
+            minePositions: new Set(await generateMinePositions(serverSeedInput.value.trim(), clientSeedInput.value.trim(), currentNonce, mineCount)),
+            uncoveredTiles: new Set(),
+            gemsFound: 0,
+        };
+        setManualControlsState(true);
+        updateMessage("Select a tile to start.", "text-blue-400");
+    }
+
+    function onTileClick(index) {
+        if (mode === 'manual') {
+            if (!manualGameState.inProgress || manualGameState.uncoveredTiles.has(index)) return;
+            manualGameState.uncoveredTiles.add(index);
+            const tile = gameGrid.children[index];
+            if (manualGameState.minePositions.has(index)) {
+                revealAll(manualGameState.minePositions, false);
+                updateMessage(`You hit a mine! Game over.`, "text-red-400");
+                endManualGame();
+                updateStatsDisplay();
+            } else {
+                manualGameState.gemsFound++;
+                const back = tile.querySelector('.tile-back');
+                back.innerHTML = `<svg class="gem-svg"><use href="#gem-icon"></use></svg>`;
+                back.classList.remove('bg-gray-600');
+                back.classList.add('bg-indigo-900');
+                tile.classList.add('flipped');
+                setManualControlsState(true);
+            }
+        } else if (mode === 'auto') {
+            if (autoBetState.running) return;
+            const tile = gameGrid.children[index];
+            if (autoBetState.selectedTiles.has(index)) {
+                autoBetState.selectedTiles.delete(index);
+                tile.classList.remove('selected-tile');
+            } else {
+                autoBetState.selectedTiles.add(index);
+                tile.classList.add('selected-tile');
+            }
+        }
+    }
+    
+    function cashout() {
+        if (!manualGameState.inProgress || manualGameState.gemsFound === 0) return;
+        const multiplier = calculatePayoutMultiplier(parseInt(mineCountInput.value), manualGameState.gemsFound);
+        const winnings = manualGameState.betAmount * multiplier;
+        balanceInput.value = (parseFloat(balanceInput.value) + winnings).toFixed(4);
+        updateMessage(`Cashed out for ${winnings.toFixed(4)}!`, "text-green-400");
+        revealAll(manualGameState.minePositions, true);
+        endManualGame();
+        updateStatsDisplay();
+    }
+
+    function endManualGame() {
+        manualGameState.inProgress = false;
+        setManualControlsState(false);
+    }
+    
+    // --- Autobet & Scripting Logic ---
+    const scriptingEngine = {
+        onBetPlacedCallback: null,
+        log: (...args) => {
+            scriptOutput.textContent += args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(' ') + '\n';
+            scriptOutput.scrollTop = scriptOutput.scrollHeight;
+        },
+        onBetPlaced: function(callback) { this.onBetPlacedCallback = callback; },
+    };
+
+    function randomFields(amount) {
+        const fields = Array.from({length: 25}, (_, i) => i);
+        for (let i = fields.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [fields[i], fields[j]] = [fields[j], fields[i]];
+        }
+        return fields.slice(0, amount);
+    }
+
+    async function runBettingLoop(isScripted) {
+        const state = isScripted ? scriptState : autoBetState;
+        const baseBet = isScripted ? (state.scriptConfig.betSize || 0.0001) : parseFloat(autoBetAmountInput.value);
+
+        let balance = parseFloat(balanceInput.value);
+        const numBets = isScripted ? (state.scriptConfig.numBets || Infinity) : parseInt(numberOfBetsInput.value) || Infinity;
+        
+        state.running = true;
+        state.stopRequested = false;
+        state.currentBetAmount = baseBet;
+        state.betsMade = 0;
+        state.startBalance = balance;
+        state.totalWagered = 0;
+        
+        let currentNonce = parseInt(nonceInput.value);
+        let nextMines = isScripted ? state.scriptConfig.mines : parseInt(autoMineCountInput.value);
+        let nextFields = isScripted ? state.scriptConfig.fields : Array.from(autoBetState.selectedTiles);
+        
+        setAutobetControlsState(true, isScripted);
+
+        while(state.betsMade < numBets && !state.stopRequested) {
+            if (state.currentBetAmount > balance) { break; }
+
+            balance -= state.currentBetAmount;
+            state.totalWagered += state.currentBetAmount;
+            state.betsMade++;
+            
+            const minePositions = new Set(await generateMinePositions(serverSeedInput.value.trim(), clientSeedInput.value.trim(), currentNonce, nextMines));
+            let hitMine = nextFields.some(tileIndex => minePositions.has(tileIndex));
+            
+            if (turboModeToggle.checked === false && !isScripted) {
+                await animateAutobetRound(minePositions, hitMine);
+            }
+            
+            const lastBet = {
+                win: !hitMine,
+                betSize: state.currentBetAmount,
+                payout: hitMine ? 0 : calculatePayoutMultiplier(nextMines, nextFields.length)
+            };
+            
+            const profit = balance - state.startBalance;
+
+            if (hitMine) { // Loss
+                if(isScripted) {
+                    await scriptingEngine.onBetPlacedCallback(lastBet, { balance, profit });
+                } else if (autoLossResetBtn.classList.contains('active')) {
+                    state.currentBetAmount = baseBet;
+                } else {
+                    state.currentBetAmount *= (1 + (parseFloat(autoLossIncreaseInput.value) || 0) / 100);
+                }
+            } else { // Win
+                balance += lastBet.betSize * lastBet.payout;
+                if(isScripted) {
+                    await scriptingEngine.onBetPlacedCallback(lastBet, { balance, profit: balance - state.startBalance });
+                } else if (autoWinResetBtn.classList.contains('active')) {
+                    state.currentBetAmount = baseBet;
+                } else {
+                    state.currentBetAmount *= (1 + (parseFloat(autoWinIncreaseInput.value) || 0) / 100);
+                }
+            }
+
+            if(isScripted) {
+                state.currentBetAmount = state.scriptConfig.betSize;
+                nextMines = state.scriptConfig.mines;
+                nextFields = state.scriptConfig.fields;
+            }
+
+            currentNonce++;
+            
+            if ((isScripted || turboModeToggle.checked)) {
+                if (state.betsMade % 1000 === 0) {
+                     balanceInput.value = balance.toFixed(4);
+                     updateAutoStats(state);
+                     await new Promise(r => setTimeout(r, 0));
+                }
+            } else if (!isScripted && !turboModeToggle.checked) {
+                balanceInput.value = balance.toFixed(4);
+                updateAutoStats(state);
+                await new Promise(r => setTimeout(r, 500));
+            }
+        }
+        
+        balanceInput.value = balance.toFixed(4);
+        nonceInput.value = currentNonce;
+        
+        let finalMessage = (isScripted ? "Script" : "Autobet") + " finished.";
+        let finalMessageColor = "text-gray-400";
+        if (state.stopRequested) {
+            finalMessage = (isScripted ? "Script" : "Autobet") + " stopped by user.";
+            finalMessageColor = "text-yellow-400";
+        } else if (state.currentBetAmount > balance) {
+            finalMessage = `Busted! Bet of ${state.currentBetAmount.toFixed(4)} exceeds balance.`;
+            finalMessageColor = "text-red-400";
+        }
+        updateMessage(finalMessage, finalMessageColor);
+        
+        state.running = false;
+        state.stopRequested = false;
+        setAutobetControlsState(false, isScripted);
+        updateAutoStats(state);
+    }
+    
+    function startScript() {
+        scriptOutput.textContent = '';
+        scriptConsole.classList.remove('hidden');
+
+        const userCode = scriptEditor.value;
+        const scriptConfig = { betSize: 0.0001, mines: 1, fields: [0], numBets: 1000 };
+
+        try {
+            const scriptFunction = new Function('engine', 'config', 'randomFields', 'balance', 'profit', userCode);
+            scriptFunction(scriptingEngine, scriptConfig, randomFields, parseFloat(balanceInput.value), 0);
+            
+            if (typeof scriptingEngine.onBetPlacedCallback !== 'function') {
+                throw new Error('engine.onBetPlaced(callback) was not called in the script.');
+            }
+            
+            scriptState.scriptConfig = scriptConfig;
+            runBettingLoop(true);
+
+        } catch (e) {
+            scriptingEngine.log('SCRIPT ERROR:', e.message);
+            updateMessage('Script error, check log.', 'text-red-400');
+        }
+    }
+    
+    async function animateAutobetRound(minePositions, hitMine) {
+        createGrid();
+        gameGrid.querySelectorAll('.tile').forEach(t => {
+            if (autoBetState.selectedTiles.has(parseInt(t.dataset.index))) {
+                t.classList.add('selected-tile');
+            }
+        });
+        await new Promise(r => setTimeout(r, 200));
+        for(let i = 0; i < 25; i++) {
+            const tile = gameGrid.children[i];
+            const back = tile.querySelector('.tile-back');
+            if (minePositions.has(i)) {
+                back.innerHTML = `<svg class="mine-svg"><use href="#mine-icon"></use></svg>`;
+                back.classList.add('bg-red-900');
+            } else {
+                back.innerHTML = `<svg class="gem-svg"><use href="#gem-icon"></use></svg>`;
+                back.classList.add('bg-indigo-900');
+            }
+        }
+        gameGrid.querySelectorAll('.tile').forEach(t => t.classList.add('flipped'));
+    }
+
+    function revealAll(minePositions, isWin) {
+        for (let i = 0; i < 25; i++) {
+            const tile = gameGrid.children[i];
+            if (!tile.classList.contains('flipped')) {
+                const back = tile.querySelector('.tile-back');
+                if (minePositions.has(i)) {
+                    back.innerHTML = `<svg class="mine-svg"><use href="#mine-icon"></use></svg>`;
+                    back.classList.add('bg-red-900');
+                } else if (!isWin) {
+                     back.innerHTML = `<svg class="gem-svg"><use href="#gem-icon"></use></svg>`;
+                     back.classList.add('bg-gray-800');
+                }
+                tile.classList.add('flipped');
+            }
+        }
+    }
+
+    function resetGameUI() {
+        createGrid();
+        setManualControlsState(false);
+        setAutobetControlsState(false, false);
+        setAutobetControlsState(false, true);
+        
+        betsDisplay.textContent = 0;
+        wageredDisplay.textContent = '0.0000';
+        profitDisplay.textContent = '0.0000';
+        profitDisplay.className = 'text-xl font-bold text-gray-400';
+        debugConsole.classList.add('hidden');
+        scriptConsole.classList.add('hidden');
+    }
+
+    function setManualControlsState(inProgress) {
+        betButton.disabled = inProgress;
+        cashoutButton.disabled = !inProgress || (manualGameState && manualGameState.gemsFound === 0);
+        betAmountInput.disabled = inProgress;
+        mineCountInput.disabled = inProgress;
+        mineCountSlider.disabled = inProgress;
+        newSeedButton.disabled = inProgress;
+        debugButton.disabled = inProgress;
+    }
+
+    function setAutobetControlsState(isRunning, isScripted) {
+        const button = isScripted ? startScriptButton : startAutobetButton;
+        const text = isScripted ? "Script" : "Autobet";
+
+        button.textContent = isRunning ? `Stop ${text}` : `Start ${text}`;
+        button.classList.toggle('bg-red-600', isRunning);
+        button.classList.toggle('hover:bg-red-700', isRunning);
+        
+        if (!isScripted) {
+            button.classList.toggle('bg-indigo-600', !isRunning);
+            button.classList.toggle('hover:bg-indigo-700', !isRunning);
+            autoBetAmountInput.disabled = isRunning;
+            autoMineCountInput.disabled = isRunning;
+            numberOfBetsInput.disabled = isRunning;
+            autoWinResetBtn.disabled = isRunning;
+            autoWinIncreaseInput.disabled = isRunning;
+            autoLossResetBtn.disabled = isRunning;
+            autoLossIncreaseInput.disabled = isRunning;
+            turboModeToggle.disabled = isRunning;
+        } else {
+             button.classList.toggle('bg-purple-600', !isRunning);
+             button.classList.toggle('hover:bg-purple-700', !isRunning);
+             scriptEditor.disabled = isRunning;
+        }
+        newSeedButton.disabled = isRunning;
+        debugButton.disabled = isRunning;
+    }
+
+    function updateStatsDisplay() {
+        const currentBalance = parseFloat(balanceInput.value);
+        const profit = currentBalance - sessionState.startBalance;
+
+        betsDisplay.textContent = sessionState.bets;
+        wageredDisplay.textContent = sessionState.wagered.toFixed(4);
+        profitDisplay.textContent = profit.toFixed(4);
+        profitDisplay.className = `text-xl font-bold ${profit >= 0 ? 'text-green-400' : 'text-red-400'}`;
+    }
+    
+    function updateAutoStats(state) {
+        const profit = parseFloat(balanceInput.value) - state.startBalance;
+        profitDisplay.textContent = profit.toFixed(4);
+        profitDisplay.className = `text-xl font-bold ${profit >= 0 ? 'text-green-400' : 'text-red-400'}`;
+        betsDisplay.textContent = state.betsMade;
+        wageredDisplay.textContent = state.totalWagered.toFixed(4);
+    }
+    
+    function updateMessage(msg, colorClass) {
+        messageBox.textContent = msg;
+        messageBox.className = `mt-4 text-center font-semibold h-10 flex items-center justify-center ${colorClass}`;
+    }
+
+    function generateRandomClientSeed(length = 10) {
+        const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        let result = '';
+        for (let i = 0; i < length; i++) result += characters.charAt(Math.floor(Math.random() * characters.length));
+        return result;
+    }
+
+    async function generateNewSeeds() {
+        serverSeedInput.value = Array.from(window.crypto.getRandomValues(new Uint8Array(32)), byte => byte.toString(16).padStart(2, '0')).join('');
+        clientSeedInput.value = generateRandomClientSeed();
+        nonceInput.value = Math.floor(Math.random() * 1000000) + 1;
+    }
+
+    function updateAutoStrategyUI(condition, strategy) {
+        if (condition === 'win') {
+            if (strategy === 'reset') {
+                autoWinResetBtn.classList.add('active');
+                autoWinIncreaseGroup.classList.remove('active');
+            } else {
+                autoWinResetBtn.classList.remove('active');
+                autoWinIncreaseGroup.classList.add('active');
+            }
+        } else {
+            if (strategy === 'reset') {
+                autoLossResetBtn.classList.add('active');
+                autoLossIncreaseGroup.classList.remove('active');
+            } else {
+                autoLossResetBtn.classList.remove('active');
+                autoLossIncreaseGroup.classList.add('active');
+            }
+        }
+    }
+
+    // --- Event Listeners ---
+    manualModeBtn.addEventListener('click', () => switchMode('manual'));
+    autoModeBtn.addEventListener('click', () => switchMode('auto'));
+    codeModeBtn.addEventListener('click', () => switchMode('code'));
+
+    mineCountSlider.addEventListener('input', (e) => mineCountInput.value = e.target.value);
+    mineCountInput.addEventListener('input', (e) => mineCountSlider.value = e.target.value);
+    
+    betButton.addEventListener('click', startManualGame);
+    cashoutButton.addEventListener('click', cashout);
+    newSeedButton.addEventListener('click', generateNewSeeds);
+    debugButton.addEventListener('click', debugMineGeneration);
+    
+    startAutobetButton.addEventListener('click', () => {
+        if(autoBetState.running) {
+            autoBetState.stopRequested = true;
+        } else {
+            runBettingLoop(false);
+        }
+    });
+    
+    startScriptButton.addEventListener('click', () => {
+        if (scriptState.running) {
+            scriptState.stopRequested = true;
+        } else {
+            startScript();
+        }
+    });
+
+    autoWinResetBtn.addEventListener('click', () => updateAutoStrategyUI('win', 'reset'));
+    autoWinIncreaseGroup.addEventListener('click', () => updateAutoStrategyUI('win', 'increase'));
+    autoLossResetBtn.addEventListener('click', () => updateAutoStrategyUI('loss', 'reset'));
+    autoLossIncreaseGroup.addEventListener('click', () => updateAutoStrategyUI('loss', 'increase'));
+    
+    balanceInput.addEventListener('change', () => {
+        if (mode === 'manual' && !manualGameState.inProgress) {
+            sessionState.startBalance = parseFloat(balanceInput.value);
+            sessionState.bets = 0;
+            sessionState.wagered = 0;
+            updateStatsDisplay();
+        }
+    });
+
+    // --- Initial Load ---
+    window.onload = () => {
+        const exampleScript = 
+`// Define initial bet parameters in the config object.
+// These can be changed dynamically in the onBetPlaced event.
+config.betSize = 0.0001;
+config.mines = 5;
+config.fields = [0, 1, 2, 3, 4]; // Tiles to click (0-24)
+config.numBets = 1000; // Optional: Or run indefinitely
+
+engine.log('Strategy script loaded!');
+
+// This function is called after each bet is resolved.
+engine.onBetPlaced(async (lastBet, state) => {
+    // state object contains { balance, profit }
+
+    if (lastBet.win) {
+        // On win, reset to base bet
+        engine.log('Win! Payout:', lastBet.payout.toFixed(2) + 'x', 'Resetting bet.');
+        config.betSize = 0.0001; 
+    } else {
+        // On loss, apply Martingale (2x bet)
+        engine.log('Loss! Doubling bet.');
+        config.betSize *= 2;
+    }
+
+    // You can also change mines or fields for the next bet
+    // config.mines = Math.floor(Math.random() * 5) + 1;
+    // config.fields = randomFields(5); // Use built-in helper
+});`;
+        scriptEditor.value = exampleScript;
+
+        generateNewSeeds();
+        switchMode('manual');
+        updateAutoStrategyUI('win', 'reset');
+        updateAutoStrategyUI('loss', 'increase');
+        sessionState.startBalance = parseFloat(balanceInput.value);
+    };
+    </script>
+</body>
+</html>
+
